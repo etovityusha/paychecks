@@ -32,7 +32,12 @@ def add(qr_string, phone, pwd):
     payload = {'fiscalSign': fp, 'date': t, 'sum': s}
     checkrequest(headers, payload, phone, pwd, fn, i)
     products = requestinfo(headers, phone, pwd, fn, i, fp)
-    append_products_to_csv(products, t)
+    if have_duplicates(t):
+        command = input('you have paycheck with the same date. you still want to add a paycheck? (y/n): ')
+        if command == 'y':
+            append_products_to_csv(products, t)
+    else:
+        append_products_to_csv(products, t)
 
 
 def checkrequest(headers, payload, phone, pwd, fn, i):
@@ -60,23 +65,33 @@ def requestinfo(headers, phone, pwd, fn, i, fp):
 
 
 def append_products_to_csv(products, t):
+    """Добавляет список покупок из чека в products.csv"""
     my_products = pd.DataFrame(products['document']['receipt']['items'])
     my_products['price'] = my_products['price'] / 100
     my_products['sum'] = my_products['sum'] / 100
     datetime_check = datetime.strptime(t, '%Y%m%dT%H%M%S')
     my_products['date'] = datetime_check
-    df = my_products[['date', 'name', 'price', 'quantity', 'sum']]
+    my_products['unix'] = time.mktime(datetime_check.timetuple())
+    df = my_products[['date', 'unix', 'name', 'price', 'quantity', 'sum']]
     df.to_csv('products.csv', mode='a', header=os.stat("products.csv").st_size == 0)
     print('product list from this paycheck added to products.csv')
 
 
 def decode_qr(qr_string):
+    """Распаковывает информацию из qr-кода в чеке"""
     t = re.findall(r't=(\w+)', qr_string)[0]
     s = re.findall(r's=(\w+.\w+)', qr_string)[0].replace('.', '')
     fn = re.findall(r'fn=(\w+)', qr_string)[0]
     i = re.findall(r'i=(\w+)', qr_string)[0]
     fp = re.findall(r'fp=(\w+)', qr_string)[0]
     return {'t': t, 's': s, 'fn': fn, 'i': i, 'fp': fp}
+
+
+def have_duplicates(t):
+    """Вовзращает True в csv файле есть чек с таким же временем и False в обратном случе"""
+    unix_time_paycheck = time.mktime(datetime.strptime(t, '%Y%m%dT%H%M%S').timetuple())
+    df = pd.read_csv('products.csv')
+    return len(df[df['unix'] == unix_time_paycheck]) != 0
 
 
 def delete():
@@ -120,7 +135,7 @@ def authorization():
                 return (phone, pwd)
     else:
         print("You don't have saved correct data for authorization.")
-        command = input('you received phone/password pair from a text message from nalog.ru? (y/n) :')
+        command = input('you received phone/password pair from a text message from nalog.ru? (y/n): ')
         if command == 'y':
             phone = input('input your phone number (use format +7XXXYYYZZZZ): ')
             pwd = input('input your password from text message: ')
@@ -174,7 +189,7 @@ def check_authorization(phone, pwd):
 
 def read_saved_authorization_info(path):
     """
-    Пыьается считать c path информацию о сохраненных там паре phone/password
+    Пытается считать c файла информацию о сохраненных там паре phone/password
     """
     with open(path, 'r') as f:
         info = f.read().split()
